@@ -22,7 +22,7 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.Configure<RabbitMqConfigSettings>(
     builder.Configuration.GetSection("RabbitMq"));
 
-builder.Services.AddSingleton(a => a.GetRequiredService<IOptions<RabbitMqConfigSettings>>().Value);
+builder.Services.AddSingleton(a => a.GetRequiredService<IOptions<RabbitMqConfigSettings>>());
 
 builder.Services.AddSingleton<IRabbitMqConnection>( new RabbitMqConnection());
 builder.Services.AddScoped<IMessageProducer, MessageProducer>();

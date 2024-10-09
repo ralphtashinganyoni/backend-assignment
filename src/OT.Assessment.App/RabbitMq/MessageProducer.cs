@@ -1,4 +1,6 @@
-﻿using OT.Assessment.Common.RabbitMq.Connection;
+﻿using Microsoft.Extensions.Options;
+using OT.Assessment.Common.RabbitMq.Config;
+using OT.Assessment.Common.RabbitMq.Connection;
 using RabbitMQ.Client;
 using System.Text;
 using System.Text.Json;
@@ -9,11 +11,18 @@ namespace OT.Assessment.App.RabbitMq
     {
         private readonly IRabbitMqConnection _connection;
         private readonly ILogger<MessageProducer> _logger;
+        private readonly RabbitMqConfigSettings _rabbitMqSettings;
 
-        public MessageProducer(IRabbitMqConnection connection, ILogger<MessageProducer> logger)
+
+        public MessageProducer(
+            IRabbitMqConnection connection, 
+            ILogger<MessageProducer> logger,
+            IOptions<RabbitMqConfigSettings> rabbitMqSettings)
         {
             _connection = connection;
             _logger = logger;
+            _rabbitMqSettings = rabbitMqSettings.Value;
+
         }
 
         public async Task SendMessage<T>(T message)
@@ -28,23 +37,23 @@ namespace OT.Assessment.App.RabbitMq
             {
                 var factory = new ConnectionFactory
                 {
-                    HostName = "localhost", 
-                    Port = 5672, 
-                    UserName = "guest",
-                    Password = "guest",
+                    HostName = _rabbitMqSettings.HostName, 
+                    Port = _rabbitMqSettings.Port, 
+                    UserName = _rabbitMqSettings.UserName,
+                    Password = _rabbitMqSettings.Password,
                 };
 
                 using var connection = factory.CreateConnection();
                 using var channel = connection.CreateModel();
 
-                channel.ExchangeDeclare("wager-exchange", ExchangeType.Direct);
+                channel.ExchangeDeclare(_rabbitMqSettings.Exchange, ExchangeType.Direct);
                 channel.QueueDeclare(
-                    queue: "wager-1",
+                    queue: _rabbitMqSettings.Queue,
                     durable: true,
                     exclusive: false,
                     autoDelete: false,
                     arguments: null);
-                channel.QueueBind("wager-1", "wager-exchange", "wager-routing-key-1", null);
+                channel.QueueBind(_rabbitMqSettings.Queue, _rabbitMqSettings.Exchange, _rabbitMqSettings.RoutingKey, null);
 
                 var json = JsonSerializer.Serialize(message);
                 var body = Encoding.UTF8.GetBytes(json);
@@ -52,8 +61,8 @@ namespace OT.Assessment.App.RabbitMq
                 await Task.Run(() =>
                 {
                     channel.BasicPublish(
-                        exchange: "wager-exchange-1",
-                        routingKey: "wager-routing-key-1",
+                        exchange: _rabbitMqSettings.Exchange,
+                        routingKey: _rabbitMqSettings.RoutingKey,
                         basicProperties: null,
                         body: body);
                     _logger.LogInformation("Message sent to RabbitMQ: {MessageType} with routing key: {RoutingKey}", typeof(T).Name, "wager-routing-key-1");

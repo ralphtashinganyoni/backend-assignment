@@ -1,4 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using OT.Assessment.Common.RabbitMq.Config;
 using OT.Assessment.Consumer.RabbitMq;
 using OT.Assessment.Consumer.Services;
 
@@ -11,8 +13,12 @@ var host = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((context, services) =>
     {
-        services.AddHostedService<MessageConsumer>(); // Register RabbitMQ consumer
-        services.AddSingleton<IWagerRepository, WagerRepository>(); // Register DbContext for SQL operations
+        services.Configure<RabbitMqConfigSettings>(
+        context.Configuration.GetSection("RabbitMq"));
+
+        services.AddSingleton(a => a.GetRequiredService<IOptions<RabbitMqConfigSettings>>());
+        services.AddHostedService<MessageConsumer>(); 
+        services.AddSingleton<IWagerRepository, WagerRepository>(); 
         services.AddLogging(config => config.AddConsole());
     })
     .Build();

@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using OT.Assessment.Consumer.Services;
 using OT.Assessment.Common.Data.DTOs;
+using OT.Assessment.Common.RabbitMq.Config;
+using Microsoft.Extensions.Options;
 
 namespace OT.Assessment.Consumer.RabbitMq
 {
@@ -14,19 +16,24 @@ namespace OT.Assessment.Consumer.RabbitMq
         private IModel _channel;
         private IConnection _connection;
         private readonly ConnectionFactory _factory;
+        private readonly RabbitMqConfigSettings _rabbitMqSettings;
 
-        public MessageConsumer(ILogger<MessageConsumer> logger, IServiceScopeFactory serviceScopeFactory)
+
+        public MessageConsumer(
+            ILogger<MessageConsumer> logger, 
+            IServiceScopeFactory serviceScopeFactory,
+            IOptions<RabbitMqConfigSettings> rabbitMqSettings)
         {
             _logger = logger;
             _serviceScopeFactory = serviceScopeFactory;
+            _rabbitMqSettings = rabbitMqSettings.Value;
 
-            // Initialize RabbitMQ ConnectionFactory
             _factory = new ConnectionFactory()
             {
-                HostName = "localhost",
-                UserName = "guest",
-                Password = "guest",
-                DispatchConsumersAsync = true // Enable async message handling
+                HostName = _rabbitMqSettings.HostName,
+                UserName = _rabbitMqSettings.UserName,
+                Password = _rabbitMqSettings.Password,
+                DispatchConsumersAsync = true 
             };
         }
 
@@ -34,7 +41,6 @@ namespace OT.Assessment.Consumer.RabbitMq
         {
             stoppingToken.Register(() => _logger.LogInformation("MessageConsumer service is stopping"));
 
-            // Establish RabbitMQ connection and channel
             _logger.LogInformation("Starting RabbitMQ Consumer");
             try
             {
@@ -59,23 +65,20 @@ namespace OT.Assessment.Consumer.RabbitMq
                         var wager = JsonSerializer.Deserialize<WagerDto>(message);
                         if (wager != null)
                         {
-                            // Save the wager to the database
                             await SaveToDatabaseAsync(wager, stoppingToken);
                         }
 
-                        // Acknowledge message as processed
                         _channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
                         _logger.LogInformation("Message acknowledged successfully.");
                     }
                     catch (JsonException jsonEx)
                     {
                         _logger.LogError(jsonEx, "Failed to deserialize message: {Message}", message);
-                        _channel.BasicNack(ea.DeliveryTag, false, false); // Reject and discard the message
+                        _channel.BasicNack(ea.DeliveryTag, false, false);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error processing message: {Message}", message);
-                        // Optionally requeue the message based on failure type
                         _channel.BasicNack(ea.DeliveryTag, false, true);
                     }
                 };
@@ -98,7 +101,7 @@ namespace OT.Assessment.Consumer.RabbitMq
                 _connection = _factory.CreateConnection();
                 _channel = _connection.CreateModel();
 
-                _channel.QueueDeclare(queue: "casino_wager_queue", durable: true, exclusive: false, autoDelete: false, arguments: null);
+                _channel.QueueDeclare(queue: _rabbitMqSettings.Queue, durable: true, exclusive: false, autoDelete: false, arguments: null);
 
                 _logger.LogInformation("RabbitMQ connection and channel established successfully.");
             }
@@ -108,7 +111,6 @@ namespace OT.Assessment.Consumer.RabbitMq
                 throw;
             }
 
-            // Close connections on cancellation
             stoppingToken.Register(() =>
             {
                 _logger.LogInformation("Cancellation requested, closing RabbitMQ connection.");
