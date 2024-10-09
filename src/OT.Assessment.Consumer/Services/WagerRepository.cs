@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Data.SqlClient;
 using Dapper;
-using OT.Assessment.Consumer.Data.DTOs;
+using OT.Assessment.Common.Data.DTOs;
 
 
 namespace OT.Assessment.Consumer.Services
@@ -9,112 +9,151 @@ namespace OT.Assessment.Consumer.Services
     public class WagerRepository : IWagerRepository
     {
         private readonly string _connectionString;
+        private readonly ILogger<WagerRepository> _logger;
 
-        public WagerRepository(IConfiguration configuration)
+        public WagerRepository(IConfiguration configuration, ILogger<WagerRepository> logger)
         {
             _connectionString = configuration.GetConnectionString("DefaultConnection");
+            _logger = logger;
         }
 
         public async Task SaveWager(WagerDto wagerDto)
         {
-            using (var connection = new SqlConnection(_connectionString))
+            if (wagerDto == null)
             {
-                connection.Open();
-                using (var transaction = connection.BeginTransaction())
+                _logger.LogError("WagerDto is null");
+                throw new ArgumentNullException(nameof(wagerDto));
+            }
+
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
                 {
-                    try
+                    await connection.OpenAsync();
+                    using (var transaction = connection.BeginTransaction())
                     {
-                        // 1. Insert into Players table if not exists
-                        string insertPlayerSql = @"
-                    IF NOT EXISTS (SELECT 1 FROM Players WHERE AccountId = @AccountId)
-                    BEGIN
-                        INSERT INTO Players (AccountId, Username, CountryCode, CreatedDateTime)
-                        VALUES (@AccountId, @Username, @CountryCode, SYSDATETIMEOFFSET())
-                    END";
-
-                        await connection.ExecuteAsync(insertPlayerSql, new
+                        try
                         {
-                            wagerDto.AccountId,
-                            wagerDto.Username,
-                            wagerDto.CountryCode
-                        }, transaction);
+                            await EnsurePlayerExistsAsync(connection, transaction, wagerDto);
+                            await EnsureGameExistsAsync(connection, transaction, wagerDto.GameName);
+                            await EnsureProviderExistsAsync(connection, transaction, wagerDto.Provider);
+                            await InsertWagerAsync(connection, transaction, wagerDto);
+                            await InsertTransactionAsync(connection, transaction, wagerDto);
 
-                        // 2. Insert into Games table if not exists
-                        string insertGameSql = @"
-                    IF NOT EXISTS (SELECT 1 FROM Games WHERE GameName = @GameName)
-                    BEGIN
-                        INSERT INTO Games (GameId, GameName)
-                        VALUES (NEWID(), @GameName) -- Assuming new GameId is generated for each new game
-                    END";
-
-                        await connection.ExecuteAsync(insertGameSql, new
+                            await transaction.CommitAsync();
+                            _logger.LogInformation($"Wager {wagerDto.WagerId} successfully saved.");
+                        }
+                        catch (Exception ex)
                         {
-                            wagerDto.GameName
-                        }, transaction);
-
-                        // 3. Insert into Providers table if not exists
-                        string insertProviderSql = @"
-                    IF NOT EXISTS (SELECT 1 FROM Providers WHERE ProviderName = @Provider)
-                    BEGIN
-                        INSERT INTO Providers (ProviderId, ProviderName)
-                        VALUES (NEWID(), @Provider) -- Assuming new ProviderId is generated for each new provider
-                    END";
-
-                        await connection.ExecuteAsync(insertProviderSql, new
-                        {
-                            wagerDto.Provider
-                        }, transaction);
-
-                        // 4. Insert into CasinoWagers table
-                        string insertWagerSql = @"
-                    INSERT INTO CasinoWagers 
-                    (WagerId, GameId, ProviderId, AccountId, Amount, CreatedDateTime, NumberOfBets, Duration, SessionData, BrandId)
-                    VALUES 
-                    (@WagerId, 
-                     (SELECT GameId FROM Games WHERE GameName = @GameName), 
-                     (SELECT ProviderId FROM Providers WHERE ProviderName = @Provider), 
-                     @AccountId, @Amount, @CreatedDateTime, @NumberOfBets, @Duration, @SessionData, @BrandId)";
-
-                        await connection.ExecuteAsync(insertWagerSql, new
-                        {
-                            wagerDto.WagerId,
-                            wagerDto.GameName,
-                            wagerDto.Provider,
-                            wagerDto.AccountId,
-                            wagerDto.Amount,
-                            wagerDto.CreatedDateTime,
-                            wagerDto.NumberOfBets,
-                            wagerDto.Duration,
-                            wagerDto.SessionData,
-                            wagerDto.BrandId
-                        }, transaction);
-
-                        // 5. Insert into Transactions table
-                        string insertTransactionSql = @"
-                    INSERT INTO Transactions 
-                    (TransactionId, WagerId, TransactionTypeId, ExternalReferenceId)
-                    VALUES 
-                    (@TransactionId, @WagerId, @TransactionTypeId, @ExternalReferenceId)";
-
-                        await connection.ExecuteAsync(insertTransactionSql, new
-                        {
-                            wagerDto.TransactionId,
-                            wagerDto.WagerId,
-                            wagerDto.TransactionTypeId,
-                            wagerDto.ExternalReferenceId
-                        }, transaction);
-
-                        // Commit transaction after successful inserts
-                        transaction.Commit();
-                    }
-                    catch (Exception ex)
-                    {
-                        transaction.Rollback();
-                        throw new Exception("Error saving wager", ex);
+                            await transaction.RollbackAsync();
+                            _logger.LogError(ex, $"Error saving wager {wagerDto.WagerId}. Transaction rolled back.");
+                            throw;
+                        }
                     }
                 }
             }
+            catch (SqlException sqlEx)
+            {
+                _logger.LogError(sqlEx, "SQL error occurred while saving wager.");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while saving wager.");
+                throw;
+            }
+        }
+
+        private async Task EnsurePlayerExistsAsync(SqlConnection connection, SqlTransaction transaction, WagerDto wagerDto)
+        {
+            const string sql = @"
+            IF NOT EXISTS (SELECT 1 FROM Players WHERE AccountId = @AccountId)
+            BEGIN
+                INSERT INTO Players (AccountId, Username, CountryCode, CreatedDateTime)
+                VALUES (@AccountId, @Username, @CountryCode, SYSDATETIMEOFFSET())
+            END";
+
+            await connection.ExecuteAsync(sql, new
+            {
+                wagerDto.AccountId,
+                wagerDto.Username,
+                wagerDto.CountryCode
+            }, transaction);
+
+            _logger.LogInformation($"Ensured Player {wagerDto.AccountId} exists.");
+        }
+
+        private async Task EnsureGameExistsAsync(SqlConnection connection, SqlTransaction transaction, string gameName)
+        {
+            const string sql = @"
+            IF NOT EXISTS (SELECT 1 FROM Games WHERE GameName = @GameName)
+            BEGIN
+                INSERT INTO Games (GameId, GameName)
+                VALUES (NEWID(), @GameName)
+            END";
+
+            await connection.ExecuteAsync(sql, new { GameName = gameName }, transaction);
+            _logger.LogInformation($"Ensured Game {gameName} exists.");
+        }
+
+        private async Task EnsureProviderExistsAsync(SqlConnection connection, SqlTransaction transaction, string providerName)
+        {
+            const string sql = @"
+            IF NOT EXISTS (SELECT 1 FROM Providers WHERE ProviderName = @Provider)
+            BEGIN
+                INSERT INTO Providers (ProviderId, ProviderName)
+                VALUES (NEWID(), @Provider)
+            END";
+
+            await connection.ExecuteAsync(sql, new { Provider = providerName }, transaction);
+            _logger.LogInformation($"Ensured Provider {providerName} exists.");
+        }
+
+        private async Task InsertWagerAsync(SqlConnection connection, SqlTransaction transaction, WagerDto wagerDto)
+        {
+            const string sql = @"
+            INSERT INTO CasinoWagers 
+            (WagerId, GameId, ProviderId, AccountId, Amount, CreatedDateTime, NumberOfBets, Duration, SessionData, BrandId)
+            VALUES 
+            (@WagerId, 
+            (SELECT GameId FROM Games WHERE GameName = @GameName), 
+            (SELECT ProviderId FROM Providers WHERE ProviderName = @Provider), 
+            @AccountId, @Amount, @CreatedDateTime, @NumberOfBets, @Duration, @SessionData, @BrandId)";
+
+            await connection.ExecuteAsync(sql, new
+            {
+                wagerDto.WagerId,
+                wagerDto.GameName,
+                wagerDto.Provider,
+                wagerDto.AccountId,
+                wagerDto.Amount,
+                wagerDto.CreatedDateTime,
+                wagerDto.NumberOfBets,
+                wagerDto.Duration,
+                wagerDto.SessionData,
+                wagerDto.BrandId
+            }, transaction);
+
+            _logger.LogInformation($"Wager {wagerDto.WagerId} inserted.");
+        }
+
+        private async Task InsertTransactionAsync(SqlConnection connection, SqlTransaction transaction, WagerDto wagerDto)
+        {
+            const string sql = @"
+            INSERT INTO Transactions 
+            (TransactionId, WagerId, TransactionTypeId, ExternalReferenceId)
+            VALUES 
+            (@TransactionId, @WagerId, @TransactionTypeId, @ExternalReferenceId)";
+
+            await connection.ExecuteAsync(sql, new
+            {
+                wagerDto.TransactionId,
+                wagerDto.WagerId,
+                wagerDto.TransactionTypeId,
+                wagerDto.ExternalReferenceId
+            }, transaction);
+
+            _logger.LogInformation($"Transaction {wagerDto.TransactionId} inserted for Wager {wagerDto.WagerId}.");
         }
     }
-
 }

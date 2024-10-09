@@ -18,7 +18,7 @@
   </ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\..\OT.Assessment.Common\OT.Assessment.Common.csproj" />
+	  <ProjectReference Include="..\OT.Assessment.Common\OT.Assessment.Common.csproj" />
 	</ItemGroup>
 
 </Project>

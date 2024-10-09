@@ -20,7 +20,6 @@ namespace OT.Assessment.Common.RabbitMq.Connection
                 UserName = "guest",
                 Password = "guest",
             };
-            //factory.Uri = new Uri("amqp://guest:guest@localhost:5672");
             _connection = factory.CreateConnection();
         }
 

@@ -1,5 +1,4 @@
-﻿using OT.Assessment.Consumer.Data.DTOs;
-using OT.Assessment.Consumer.Data.Entities;
+﻿using OT.Assessment.Common.Data.DTOs;
 
 namespace OT.Assessment.Consumer.Services
 {
