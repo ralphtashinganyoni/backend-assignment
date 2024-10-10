@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using OT.Assessment.App.RabbitMq.Connection;
 using OT.Assessment.App.RabbitMq;
 using OT.Assessment.Common;
@@ -20,14 +19,12 @@ builder.Services.AddSwaggerGen(options =>
 ServiceRegistration.ConfigureServices(builder.Services);
 builder.Services.Configure<RabbitMqConfigSettings>(builder.Configuration.GetSection("RabbitMq"));
 
-// Register RabbitMqConnection via DI, not direct instantiation
 builder.Services.AddSingleton<IRabbitMqConnection, RabbitMqConnection>();
 builder.Services.AddScoped<IMessageProducer, MessageProducer>();
 builder.Services.AddScoped<IPlayerWagerService, PlayerWagerService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

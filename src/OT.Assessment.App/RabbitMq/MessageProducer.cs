@@ -40,9 +40,8 @@ namespace OT.Assessment.App.RabbitMq
             _factory.RequestedConnectionTimeout = TimeSpan.FromSeconds(30);
 
 
-            // Polly retry policy: Retry up to 5 times, with a delay between retries
             _retryPolicy = Policy
-                .Handle<Exception>() // Handle all exceptions
+                .Handle<Exception>() 
                 .WaitAndRetryAsync(5, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
                     (exception, timeSpan, retryCount, context) =>
                     {

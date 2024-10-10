@@ -14,7 +14,6 @@ namespace OT.Assessment.App.RabbitMq.Connection
 
         public IConnection Connection => _connection;
 
-        // Inject configuration settings
         public RabbitMqConnection(IOptions<RabbitMqConfigSettings> configOptions)
         {
             _configSettings = configOptions.Value ?? throw new ArgumentNullException(nameof(configOptions));

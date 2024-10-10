@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Options;
 using OT.Assessment.Common.Data.DTOs;
 using OT.Assessment.Common.Data.Repositories;
 using OT.Assessment.Common.RabbitMq.Config;
@@ -84,12 +83,12 @@ namespace OT.Assessment.Consumer.RabbitMq
                 catch (JsonException jsonEx)
                 {
                     _logger.LogError(jsonEx, "Failed to deserialize message: {Message}", message);
-                    _channel.BasicNack(ea.DeliveryTag, false, false); // Discard the message
+                    _channel.BasicNack(ea.DeliveryTag, false, false);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error processing message: {Message}", message);
-                    _channel.BasicNack(ea.DeliveryTag, false, true); // Requeue the message
+                    _channel.BasicNack(ea.DeliveryTag, false, true); 
                 }
             };
 
