@@ -1,6 +1,6 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Dapper;
 using Microsoft.Data.SqlClient;
-using Dapper;
+using Microsoft.Extensions.Configuration;
 using OT.Assessment.Common.Data.DTOs;
 
 

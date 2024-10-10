@@ -1,11 +1,11 @@
-﻿using RabbitMQ.Client.Events;
-using RabbitMQ.Client;
-using System.Text;
-using System.Text.Json;
-using OT.Assessment.Consumer.Services;
+﻿using Microsoft.Extensions.Options;
 using OT.Assessment.Common.Data.DTOs;
 using OT.Assessment.Common.RabbitMq.Config;
-using Microsoft.Extensions.Options;
+using OT.Assessment.Consumer.Services;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System.Text;
+using System.Text.Json;
 
 namespace OT.Assessment.Consumer.RabbitMq
 {
@@ -20,7 +20,7 @@ namespace OT.Assessment.Consumer.RabbitMq
 
 
         public MessageConsumer(
-            ILogger<MessageConsumer> logger, 
+            ILogger<MessageConsumer> logger,
             IServiceScopeFactory serviceScopeFactory,
             IOptions<RabbitMqConfigSettings> rabbitMqSettings)
         {
@@ -33,7 +33,7 @@ namespace OT.Assessment.Consumer.RabbitMq
                 HostName = _rabbitMqSettings.HostName,
                 UserName = _rabbitMqSettings.UserName,
                 Password = _rabbitMqSettings.Password,
-                DispatchConsumersAsync = true 
+                DispatchConsumersAsync = true
             };
         }
 

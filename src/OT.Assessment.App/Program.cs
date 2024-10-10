@@ -1,4 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OT.Assessment.App.Model.Repository;
 using OT.Assessment.App.RabbitMq;
@@ -24,7 +23,7 @@ builder.Services.Configure<RabbitMqConfigSettings>(
 
 builder.Services.AddSingleton(a => a.GetRequiredService<IOptions<RabbitMqConfigSettings>>());
 
-builder.Services.AddSingleton<IRabbitMqConnection>( new RabbitMqConnection());
+builder.Services.AddSingleton<IRabbitMqConnection>(new RabbitMqConnection());
 builder.Services.AddScoped<IMessageProducer, MessageProducer>();
 builder.Services.AddTransient<IWagerRepository, WagerRepository>();
 builder.Services.AddScoped<IPlayerWagerService, PlayerWagerService>();
@@ -45,6 +44,12 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.Use(async (context, next) =>
+{
+    Console.WriteLine($"Request: {context.Request.Method} {context.Request.Path}");
+    await next.Invoke();
+});
+
 
 app.UseAuthorization();
 

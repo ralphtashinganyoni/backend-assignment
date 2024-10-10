@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace OT.Assessment.Consumer.Data.Entities
+﻿namespace OT.Assessment.Consumer.Data.Entities
 {
     public class Wager
     {
