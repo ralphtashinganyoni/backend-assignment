@@ -1,15 +1,14 @@
 using Microsoft.Extensions.Options;
-using OT.Assessment.App.Model.Repository;
+using OT.Assessment.App.RabbitMq.Connection;
 using OT.Assessment.App.RabbitMq;
-using OT.Assessment.App.Services;
+using OT.Assessment.Common;
 using OT.Assessment.Common.RabbitMq.Config;
-using OT.Assessment.Common.RabbitMq.Connection;
 using System.Reflection;
+using OT.Assessment.App.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckl
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSwaggerGen(options =>
@@ -18,16 +17,13 @@ builder.Services.AddSwaggerGen(options =>
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
 });
 
-builder.Services.Configure<RabbitMqConfigSettings>(
-    builder.Configuration.GetSection("RabbitMq"));
+ServiceRegistration.ConfigureServices(builder.Services);
+builder.Services.Configure<RabbitMqConfigSettings>(builder.Configuration.GetSection("RabbitMq"));
 
-builder.Services.AddSingleton(a => a.GetRequiredService<IOptions<RabbitMqConfigSettings>>());
-
-builder.Services.AddSingleton<IRabbitMqConnection>(new RabbitMqConnection());
+// Register RabbitMqConnection via DI, not direct instantiation
+builder.Services.AddSingleton<IRabbitMqConnection, RabbitMqConnection>();
 builder.Services.AddScoped<IMessageProducer, MessageProducer>();
-builder.Services.AddTransient<IWagerRepository, WagerRepository>();
 builder.Services.AddScoped<IPlayerWagerService, PlayerWagerService>();
-
 
 var app = builder.Build();
 
@@ -44,15 +40,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.Use(async (context, next) =>
-{
-    Console.WriteLine($"Request: {context.Request.Method} {context.Request.Path}");
-    await next.Invoke();
-});
-
-
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

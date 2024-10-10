@@ -1,7 +1,6 @@
-﻿using OT.Assessment.App.Model.DTOs;
-using OT.Assessment.App.Model.Repository;
-using OT.Assessment.App.RabbitMq;
+﻿using OT.Assessment.App.RabbitMq;
 using OT.Assessment.Common.Data.DTOs;
+using OT.Assessment.Common.Data.Repositories;
 
 namespace OT.Assessment.App.Services
 {
@@ -52,7 +51,7 @@ namespace OT.Assessment.App.Services
             }
         }
 
-        public void PublishWagerToQueue(WagerDto wager)
+        public async Task<bool> PublishWagerToQueue(WagerDto wager)
         {
             if (wager == null)
             {
@@ -64,15 +63,17 @@ namespace OT.Assessment.App.Services
 
             try
             {
-                _messageProducer.SendMessage<WagerDto>(wager);
+                await _messageProducer.SendMessage(wager);
                 _logger.LogInformation("Successfully published wager {WagerId} to the message queue.", wager.WagerId);
+                return true; 
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error publishing wager {WagerId} to the message queue.", wager.WagerId);
-                throw; 
+                return false; 
             }
         }
+
     }
 
 }

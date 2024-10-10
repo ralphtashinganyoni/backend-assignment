@@ -1,6 +1,6 @@
 ﻿using RabbitMQ.Client;
 
-namespace OT.Assessment.Common.RabbitMq.Connection
+namespace OT.Assessment.App.RabbitMq.Connection
 {
     public interface IRabbitMqConnection
     {

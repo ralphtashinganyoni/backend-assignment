@@ -1,7 +1,8 @@
-﻿using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using OT.Assessment.Common.Data.DTOs;
+using OT.Assessment.Common.Data.Repositories;
 using OT.Assessment.Common.RabbitMq.Config;
-using OT.Assessment.Consumer.Services;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
@@ -12,142 +13,105 @@ namespace OT.Assessment.Consumer.RabbitMq
     public class MessageConsumer : BackgroundService
     {
         private readonly ILogger<MessageConsumer> _logger;
-        private readonly IServiceScopeFactory _serviceScopeFactory;
-        private IModel _channel;
-        private IConnection _connection;
-        private readonly ConnectionFactory _factory;
         private readonly RabbitMqConfigSettings _rabbitMqSettings;
+        private IServiceScopeFactory _serviceScopeFactory;
+        private IConnection _connection;
+        private IModel _channel;
 
 
         public MessageConsumer(
             ILogger<MessageConsumer> logger,
-            IServiceScopeFactory serviceScopeFactory,
-            IOptions<RabbitMqConfigSettings> rabbitMqSettings)
+            IOptions<RabbitMqConfigSettings> rabbitMqSettings,
+            IServiceScopeFactory serviceScopeFactory
+)
         {
             _logger = logger;
-            _serviceScopeFactory = serviceScopeFactory;
             _rabbitMqSettings = rabbitMqSettings.Value;
+            _serviceScopeFactory = serviceScopeFactory;
+            InitializeRabbitMQ();
+        }
 
-            _factory = new ConnectionFactory()
+        private void InitializeRabbitMQ()
+        {
+            var factory = new ConnectionFactory
             {
                 HostName = _rabbitMqSettings.HostName,
+                Port = _rabbitMqSettings.Port,
                 UserName = _rabbitMqSettings.UserName,
                 Password = _rabbitMqSettings.Password,
                 DispatchConsumersAsync = true
             };
+
+            _connection = factory.CreateConnection();
+            _channel = _connection.CreateModel();
+
+            _channel.ExchangeDeclare(_rabbitMqSettings.Exchange, ExchangeType.Direct);
+            _channel.QueueDeclare(queue: _rabbitMqSettings.Queue, durable: true, exclusive: false, autoDelete: false, arguments: null);
+            _channel.QueueBind(_rabbitMqSettings.Queue, _rabbitMqSettings.Exchange, _rabbitMqSettings.RoutingKey);
+
+            _logger.LogInformation("RabbitMQ connection and channel established successfully.");
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            stoppingToken.Register(() => _logger.LogInformation("MessageConsumer service is stopping"));
+            stoppingToken.Register(() => _logger.LogInformation("MessageConsumer is stopping."));
 
-            _logger.LogInformation("Starting RabbitMQ Consumer");
-            try
+            var consumer = new AsyncEventingBasicConsumer(_channel);
+            consumer.Received += async (model, ea) =>
             {
-                await InitializeRabbitMQ(stoppingToken);
-
-                var consumer = new AsyncEventingBasicConsumer(_channel);
-                consumer.Received += async (model, ea) =>
+                if (stoppingToken.IsCancellationRequested)
                 {
-                    if (stoppingToken.IsCancellationRequested)
+                    _logger.LogInformation("Cancellation requested, stopping message processing.");
+                    return;
+                }
+
+                var body = ea.Body.ToArray();
+                var message = Encoding.UTF8.GetString(body);
+
+                _logger.LogInformation("Received message from RabbitMQ: {Message}", message);
+
+                try
+                {
+                    var wager = JsonSerializer.Deserialize<WagerDto>(message);
+                    if (wager != null)
                     {
-                        _logger.LogInformation("Cancellation requested, stopping message processing.");
-                        return;
+                        await ProcessMessageAsync(wager, stoppingToken);
                     }
 
-                    var body = ea.Body.ToArray();
-                    var message = Encoding.UTF8.GetString(body);
+                    _channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
+                    _logger.LogInformation("Message acknowledged successfully.");
+                }
+                catch (JsonException jsonEx)
+                {
+                    _logger.LogError(jsonEx, "Failed to deserialize message: {Message}", message);
+                    _channel.BasicNack(ea.DeliveryTag, false, false); // Discard the message
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing message: {Message}", message);
+                    _channel.BasicNack(ea.DeliveryTag, false, true); // Requeue the message
+                }
+            };
 
-                    _logger.LogInformation("Received message from RabbitMQ: {Message}", message);
+            _channel.BasicConsume(queue: _rabbitMqSettings.Queue, autoAck: false, consumer: consumer);
 
-                    try
-                    {
-                        var wager = JsonSerializer.Deserialize<WagerDto>(message);
-                        if (wager != null)
-                        {
-                            await SaveToDatabaseAsync(wager, stoppingToken);
-                        }
-
-                        _channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
-                        _logger.LogInformation("Message acknowledged successfully.");
-                    }
-                    catch (JsonException jsonEx)
-                    {
-                        _logger.LogError(jsonEx, "Failed to deserialize message: {Message}", message);
-                        _channel.BasicNack(ea.DeliveryTag, false, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error processing message: {Message}", message);
-                        _channel.BasicNack(ea.DeliveryTag, false, true);
-                    }
-                };
-
-                _channel.BasicConsume(queue: "casino_wager_queue", autoAck: false, consumer: consumer);
-
-                await Task.CompletedTask;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error initializing RabbitMQ consumer.");
-                throw;
-            }
+            await Task.CompletedTask;
         }
 
-        private async Task InitializeRabbitMQ(CancellationToken stoppingToken)
-        {
-            try
-            {
-                _connection = _factory.CreateConnection();
-                _channel = _connection.CreateModel();
-
-                _channel.QueueDeclare(queue: _rabbitMqSettings.Queue, durable: true, exclusive: false, autoDelete: false, arguments: null);
-
-                _logger.LogInformation("RabbitMQ connection and channel established successfully.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to establish RabbitMQ connection.");
-                throw;
-            }
-
-            stoppingToken.Register(() =>
-            {
-                _logger.LogInformation("Cancellation requested, closing RabbitMQ connection.");
-                _channel?.Close();
-                _connection?.Close();
-            });
-        }
-
-        private async Task SaveToDatabaseAsync(WagerDto wager, CancellationToken stoppingToken)
+        private async Task ProcessMessageAsync(WagerDto wager, CancellationToken stoppingToken)
         {
             if (wager == null)
             {
-                _logger.LogWarning("Attempted to save a null WagerDto.");
+                _logger.LogWarning("Attempted to process a null WagerDto.");
                 return;
             }
 
-            try
-            {
-                using (var scope = _serviceScopeFactory.CreateScope())
-                {
-                    var wagerRepository = scope.ServiceProvider.GetRequiredService<IWagerRepository>();
+            _logger.LogInformation("Processing wager: {WagerId}", wager.WagerId);
 
-                    // Respect cancellation token
-                    if (stoppingToken.IsCancellationRequested)
-                    {
-                        _logger.LogWarning("Cancellation requested before saving to database.");
-                        return;
-                    }
-
-                    await wagerRepository.SaveWager(wager);
-                    _logger.LogInformation("Wager {WagerId} saved to database successfully.", wager.WagerId);
-                }
-            }
-            catch (Exception ex)
+            using (var scope = _serviceScopeFactory.CreateScope())
             {
-                _logger.LogError(ex, "Error saving Wager {WagerId} to database.", wager.WagerId);
-                throw;
+                var wagerRepository = scope.ServiceProvider.GetRequiredService<IWagerRepository>();
+                await wagerRepository.SaveWager(wager);
             }
         }
 
@@ -159,5 +123,6 @@ namespace OT.Assessment.Consumer.RabbitMq
             _logger.LogInformation("RabbitMQ resources disposed.");
         }
     }
+
 
 }

@@ -3,7 +3,7 @@ using OT.Assessment.App.Services;
 using OT.Assessment.Common.Data.DTOs;
 namespace OT.Assessment.App.Controllers
 {
-  
+
     [ApiController]
     [Route("api/player")]
     public class PlayerController : ControllerBase
@@ -11,7 +11,7 @@ namespace OT.Assessment.App.Controllers
         private readonly IPlayerWagerService _playerWagerService;
         public PlayerController(IPlayerWagerService playerWagerService)
         {
-            _playerWagerService = playerWagerService;  
+            _playerWagerService = playerWagerService;
         }
         //POST api/player/casinowager
         [HttpPost("casinowager")]
@@ -20,8 +20,10 @@ namespace OT.Assessment.App.Controllers
             if (wager == null)
                 return BadRequest("Invalid wager details");
 
-            _playerWagerService.PublishWagerToQueue(wager);
-            return Ok();
+            var response = await _playerWagerService.PublishWagerToQueue(wager);
+            if(response)
+                return Ok();
+            return StatusCode(StatusCodes.Status500InternalServerError);
         }
 
         //GET api/player/{playerId}/wagers

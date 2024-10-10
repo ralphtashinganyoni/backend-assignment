@@ -1,4 +1,4 @@
-﻿namespace OT.Assessment.App.Model.DTOs
+﻿namespace OT.Assessment.Common.Data.DTOs
 {
     public class TopSpenderDto
     {

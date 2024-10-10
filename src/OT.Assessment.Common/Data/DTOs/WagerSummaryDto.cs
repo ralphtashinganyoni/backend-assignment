@@ -1,4 +1,4 @@
-﻿namespace OT.Assessment.App.Model.DTOs
+﻿namespace OT.Assessment.Common.Data.DTOs
 {
     public class WagerSummaryDto
     {
@@ -6,6 +6,6 @@
         public string GameName { get; set; }
         public string Provider { get; set; }
         public decimal Amount { get; set; }
-        public DateTime CreatedDateTime { get; set; }
+        public DateTimeOffset CreatedDateTime { get; set; }
     }
 }
